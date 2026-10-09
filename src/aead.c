@@ -129,23 +129,23 @@ static void tag(uint8_t out[16], const uint8_t key[32], const uint8_t nonce[12],
 	poly_block(&p, lens);
 
 	/* carrega tudo, e h mod p: subtrai p se couber, sem desvio */
-	uint32_t *h = p.h, g[5], c = 0;
+	uint32_t *h = p.h, g[5], cy = 0;
 	for (int i = 1; i < 5; i++) {
-		h[i] += c;
-		c = h[i] >> 26;
+		h[i] += cy;
+		cy = h[i] >> 26;
 		h[i] &= 0x3ffffff;
 	}
-	h[0] += c * 5;
-	c = h[0] >> 26;
+	h[0] += cy * 5;
+	cy = h[0] >> 26;
 	h[0] &= 0x3ffffff;
-	h[1] += c;
-	c = 5;
+	h[1] += cy;
+	cy = 5;
 	for (int i = 0; i < 5; i++) {
-		g[i] = h[i] + c;
-		c = g[i] >> 26;
+		g[i] = h[i] + cy;
+		cy = g[i] >> 26;
 		g[i] &= 0x3ffffff;
 	}
-	g[4] = g[4] + (c << 26) - (1 << 26); /* h + 5 - 2^130 */
+	g[4] = g[4] + (cy << 26) - (1 << 26); /* h + 5 - 2^130 */
 	uint32_t m = (g[4] >> 31) - 1;       /* tudo 1 se h >= p */
 	for (int i = 0; i < 5; i++) h[i] = (h[i] & ~m) | (g[i] & m);
 
