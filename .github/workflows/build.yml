@@ -13,6 +13,14 @@ jobs:
         run: |
           make host CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
           build/vectors
+          build/blake2s_dump | python3 -I -c '
+          import sys, hashlib
+          d = bytes((i * 7 + 3) & 255 for i in range(300)); k = 0
+          for l in sys.stdin:
+              n, h = l.split(); n = int(n)
+              assert hashlib.blake2s(d[:n]).hexdigest() == h, n
+              k += 1
+          assert k == 301; print("blake2s: 301 tamanhos iguais ao hashlib")'
           test/e2e.sh build/ntun
       - name: servidor para a VPS (x86_64, sem sanitizer)
         run: |

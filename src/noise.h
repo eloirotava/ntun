@@ -1,6 +1,7 @@
-/* Noise_IK_25519_ChaChaPoly_BLAKE2b (noiseprotocol.org, rev 34) sobre a
- * Monocypher. So o necessario para o ntun: o iniciador (roteador) conhece a
- * chave estatica do respondedor (VPS) e se identifica com a sua.
+/* Noise_IK_25519_ChaChaPoly_BLAKE2s (noiseprotocol.org, rev 34): X25519 e
+ * ChaCha20-Poly1305 da Monocypher, BLAKE2s proprio (blake2s.c). So o
+ * necessario para o ntun: o iniciador (roteador) conhece a chave estatica do
+ * respondedor (VPS) e se identifica com a sua.
  *
  *   <- s
  *   ...
@@ -21,8 +22,8 @@ typedef struct {
 
 typedef struct {
 	noise_cipher c;
-	uint8_t ck[64];
-	uint8_t h[64];
+	uint8_t ck[32];
+	uint8_t h[32];
 	uint8_t s_priv[32], s_pub[32];
 	uint8_t e_priv[32], e_pub[32];
 	uint8_t rs[32], re[32];

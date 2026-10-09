@@ -1,10 +1,11 @@
 /* Confere noise.c contra o vetor oficial do Cacophony para
- * Noise_IK_25519_ChaChaPoly_BLAKE2b: as duas mensagens de handshake, o hash
+ * Noise_IK_25519_ChaChaPoly_BLAKE2s: as duas mensagens de handshake, o hash
  * final e 4 mensagens de transporte, nos dois sentidos. */
 #include <stdio.h>
 #include <string.h>
 #include "../src/noise.h"
 #include "vector_ik.h"
+#include "../src/blake2s.h"
 
 static size_t unhex(uint8_t *out, const char *h)
 {
@@ -18,7 +19,7 @@ static int fails;
 
 int main(void)
 {
-	uint8_t prologue[64], is[32], ie[32], irs[32], rs_[32], re[32], hh[64];
+	uint8_t prologue[64], is[32], ie[32], irs[32], rs_[32], re[32], hh[32];
 	uint8_t want[512], buf[512], pl[512];
 	size_t plen = unhex(prologue, v_init_prologue);
 	unhex(is, v_init_static);
@@ -52,7 +53,7 @@ int main(void)
 	CHECK(n == (long)cn && memcmp(buf, want, cn) == 0, "mensagem 2");
 	n = noise_ik_read2(&ini, buf, cn, got, &i_send, &i_recv);
 	CHECK(n == (long)pn && memcmp(got, pl, pn) == 0, "leitura da mensagem 2");
-	CHECK(memcmp(ini.h, hh, 64) == 0 && memcmp(rsp.h, hh, 64) == 0, "hash do handshake");
+	CHECK(memcmp(ini.h, hh, 32) == 0 && memcmp(rsp.h, hh, 32) == 0, "hash do handshake");
 
 	/* transporte: alternando iniciador -> respondedor e de volta */
 	for (int m = 2; m < V_NMSG; m++) {
@@ -81,6 +82,21 @@ int main(void)
 	n = noise_ik_write1(&ini, ie, pl, pn, buf);
 	CHECK(n < 0 || noise_ik_read1(&rsp, buf, (size_t)n, got) < 0, "recusa chave do servidor errada");
 
-	printf(fails ? "%d falhas\n" : "vetor Cacophony IK/BLAKE2b: ok\n", fails);
+	/* BLAKE2s: RFC 7693 (B.2, "abc") e a mensagem vazia */
+	{
+		uint8_t o[32], w[32];
+		blake2s_ctx x;
+		blake2s_init(&x);
+		blake2s_update(&x, (const uint8_t *)"abc", 3);
+		blake2s_final(&x, o);
+		unhex(w, "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982");
+		CHECK(memcmp(o, w, 32) == 0, "blake2s(abc)");
+		blake2s_init(&x);
+		blake2s_final(&x, o);
+		unhex(w, "69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9");
+		CHECK(memcmp(o, w, 32) == 0, "blake2s(vazio)");
+	}
+
+	printf(fails ? "%d falhas\n" : "vetor Cacophony IK/BLAKE2s: ok\n", fails);
 	return fails != 0;
 }

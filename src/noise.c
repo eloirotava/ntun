@@ -1,12 +1,13 @@
-/* Noise_IK_25519_ChaChaPoly_BLAKE2b; ver noise.h. Os nomes seguem o
+/* Noise_IK_25519_ChaChaPoly_BLAKE2s; ver noise.h. Os nomes seguem o
  * documento do Noise (secao 5: CipherState, SymmetricState, HandshakeState). */
 #include "noise.h"
 #include "../vendor/monocypher.h"
+#include "blake2s.h"
 
-#define HASHLEN  64
-#define BLOCKLEN 128
+#define HASHLEN  32
+#define BLOCKLEN 64
 
-static const char protocol_name[] = "Noise_IK_25519_ChaChaPoly_BLAKE2b";
+static const char protocol_name[] = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 static void copy(uint8_t *d, const uint8_t *s, size_t n) { while (n--) *d++ = *s++; }
 
@@ -19,29 +20,30 @@ void noise_public_key(uint8_t pub[32], const uint8_t priv[32])
 
 static void hash2(uint8_t out[HASHLEN], const uint8_t *a, size_t al, const uint8_t *b, size_t bl)
 {
-	crypto_blake2b_ctx x;
-	crypto_blake2b_init(&x, HASHLEN);
-	crypto_blake2b_update(&x, a, al);
-	crypto_blake2b_update(&x, b, bl);
-	crypto_blake2b_final(&x, out);
+	blake2s_ctx x;
+	blake2s_init(&x);
+	blake2s_update(&x, a, al);
+	blake2s_update(&x, b, bl);
+	blake2s_final(&x, out);
 }
 
-/* HMAC-BLAKE2b (RFC 2104); chave sempre de HASHLEN bytes aqui */
+/* HMAC-BLAKE2s (RFC 2104); chave sempre de HASHLEN bytes aqui */
 static void hmac(uint8_t out[HASHLEN], const uint8_t key[HASHLEN],
                  const uint8_t *d1, size_t l1, const uint8_t *d2, size_t l2)
 {
 	uint8_t pad[BLOCKLEN], inner[HASHLEN];
-	crypto_blake2b_ctx x;
+	blake2s_ctx x;
 	for (int i = 0; i < BLOCKLEN; i++) pad[i] = (i < HASHLEN ? key[i] : 0) ^ 0x36;
-	crypto_blake2b_init(&x, HASHLEN);
-	crypto_blake2b_update(&x, pad, BLOCKLEN);
-	crypto_blake2b_update(&x, d1, l1);
-	crypto_blake2b_update(&x, d2, l2);
-	crypto_blake2b_final(&x, inner);
+	blake2s_init(&x);
+	blake2s_update(&x, pad, BLOCKLEN);
+	blake2s_update(&x, d1, l1);
+	blake2s_update(&x, d2, l2);
+	blake2s_final(&x, inner);
 	for (int i = 0; i < BLOCKLEN; i++) pad[i] ^= 0x36 ^ 0x5c;
 	hash2(out, pad, BLOCKLEN, inner, HASHLEN);
 	crypto_wipe(pad, sizeof pad);
 	crypto_wipe(inner, sizeof inner);
+	crypto_wipe(&x, sizeof x);
 }
 
 /* HKDF com 2 saidas */
@@ -156,8 +158,8 @@ void noise_ik_init(noise_hs *hs, int initiator, const uint8_t s_priv[32],
 {
 	uint8_t *p = (uint8_t *)hs;
 	for (size_t i = 0; i < sizeof *hs; i++) p[i] = 0;
-	/* nome < HASHLEN: h = nome completado com zeros */
-	copy(hs->h, (const uint8_t *)protocol_name, sizeof protocol_name - 1);
+	/* nome (33) > HASHLEN (32): h = HASH(nome) */
+	hash2(hs->h, (const uint8_t *)protocol_name, sizeof protocol_name - 1, 0, 0);
 	copy(hs->ck, hs->h, HASHLEN);
 	mix_hash(hs, prologue, prologue_len);
 	copy(hs->s_priv, s_priv, 32);

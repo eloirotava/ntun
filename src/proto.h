@@ -17,8 +17,8 @@
 #ifndef NTUN_PROTO_H
 #define NTUN_PROTO_H
 
-#define NTUN_PROLOGUE     "ntun 1"
-#define NTUN_VERSION      1
+#define NTUN_PROLOGUE     "ntun 2" /* 2: BLAKE2s */
+#define NTUN_VERSION      2
 #define NTUN_DEFAULT_PORT 8222
 
 enum {

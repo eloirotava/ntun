@@ -135,7 +135,7 @@ static int listen_on(uint32_t ip, unsigned port)
 static int send_msg(struct link *l, int type, const uint8_t *d, size_t n)
 {
 	clear[0] = (uint8_t)type;
-	memcpy(clear + 1, d, n);
+	if (n) memcpy(clear + 1, d, n); /* d pode ser NULL com n == 0 */
 	size_t m = noise_encrypt(&l->tx, clear, 1 + n, frame + 2);
 	frame[0] = (uint8_t)(m >> 8);
 	frame[1] = (uint8_t)m;
