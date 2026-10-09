@@ -6,7 +6,15 @@ set -eu
 CLIENT=$1
 QEMU=${2:-}
 T=$(mktemp -d)
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$T"' EXIT
+fim() {
+	r=$?
+	kill $(jobs -p) 2>/dev/null || true
+	if [ $r -ne 0 ]; then
+		for f in "$T"/*.log; do echo "--- $f"; cat "$f"; done
+	fi
+	rm -rf "$T"
+}
+trap fim EXIT
 
 set -- $(build/ntun-server keygen); SPRIV=$1 SPUB=$2
 set -- $(build/ntun-server keygen); CPRIV=$1 CPUB=$2

@@ -33,12 +33,14 @@ build/vectors: test/vectors.c src/noise.c vendor/monocypher.c | build
 mipsel: | build
 	mipsel-linux-gnu-gcc $(MIPS_FLAGS) $(MIPS_LD) -o build/ntun-mipsel$(if $(MIPS16),-16) \
 		$(SRC_C) src/sys_nolibc.c src/mips.S -lgcc
+	cp build/ntun-mipsel$(if $(MIPS16),-16) build/ntun-mipsel$(if $(MIPS16),-16).elf
 	mipsel-linux-gnu-strip -s -R .comment -R .pdr -R .mdebug.abi32 -R .MIPS.abiflags -R .reginfo \
 		-R .gnu.attributes build/ntun-mipsel$(if $(MIPS16),-16)
 
 mips: | build
 	mips-linux-gnu-gcc $(MIPS_FLAGS) $(MIPS_LD) -o build/ntun-mips$(if $(MIPS16),-16) \
 		$(SRC_C) src/sys_nolibc.c src/mips.S -lgcc
+	cp build/ntun-mips$(if $(MIPS16),-16) build/ntun-mips$(if $(MIPS16),-16).elf
 	mips-linux-gnu-strip -s -R .comment -R .pdr -R .mdebug.abi32 -R .MIPS.abiflags -R .reginfo \
 		-R .gnu.attributes build/ntun-mips$(if $(MIPS16),-16)
 
