@@ -12,7 +12,9 @@ CFLAGS  ?= -Os -Wall -Wextra
 ARCH    ?= mipsel
 RTUN_DEF ?=
 
-NOISE   = src/noise.c src/blake2s.c src/c25519.c src/aead.c
+# sha2.c: o c25519.c tem a verificacao Ed25519 (so o rtun/wsudp usam; no
+# MIPS o --gc-sections tira, no PC precisa ligar)
+NOISE   = src/noise.c src/blake2s.c src/c25519.c src/aead.c src/sha2.c
 TLS     = src/tls13.c src/ws.c src/sha2.c src/c25519.c src/aead.c
 COMMON  = src/util.c
 

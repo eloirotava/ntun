@@ -6,18 +6,6 @@
 #include "sys.h"
 #include "util.h"
 
-static int write_all(int fd, const uint8_t *b, size_t n)
-{
-	while (n) {
-		long r = x_write(fd, b, n);
-		if (r == -EINTR) continue;
-		if (r <= 0) return -1;
-		b += r;
-		n -= (size_t)r;
-	}
-	return 0;
-}
-
 static int read_full(int fd, uint8_t *b, size_t n)
 {
 	while (n) {
