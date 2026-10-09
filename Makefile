@@ -30,7 +30,7 @@ SRC_bench = test/bench.c src/c25519.c src/aead.c
 MIPS_FLAGS = -Os -Wall -Wextra -mips32r2 -mno-abicalls -fno-pic -G0 \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-asynchronous-unwind-tables \
 	-ffunction-sections -fdata-sections -fno-tree-loop-distribute-patterns
-MIPS_LD    = -static -nostdlib -Wl,--gc-sections -Wl,-e,__start -Wl,--build-id=none -Wl,-z,norelro
+MIPS_LD    = -static -nostdlib -Wl,-z,noexecstack -Wl,--gc-sections -Wl,-e,__start -Wl,--build-id=none -Wl,-z,norelro
 ifeq ($(MIPS16),1)
 MIPS_FLAGS += -mips16 -minterlink-mips16
 SUF = -16

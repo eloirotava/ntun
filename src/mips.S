@@ -45,3 +45,6 @@ raw_syscall:
 1:	jr	$ra
 	nop
 	.end	raw_syscall
+
+/* pilha nao executavel (sem isto o kernel liga a execucao na pilha) */
+	.section .note.GNU-stack,"",@progbits
