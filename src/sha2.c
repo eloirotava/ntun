@@ -152,7 +152,10 @@ void sha512_final(sha512_ctx *x, uint8_t out[64])
 	uint8_t pad = 0x80;
 	sha512_update(x, &pad, 1);
 	pad = 0;
-	while (x->n != 120) sha512_update(x, &pad, 1); /* + 8 zeros do tamanho de 128 bits */
+	/* o tamanho ocupa 16 bytes no SHA-512: zeros ate 112, 8 zeros (parte alta,
+	 * sempre 0 aqui) e os 8 bytes do tamanho em bits */
+	while (x->n != 112) sha512_update(x, &pad, 1);
+	for (int i = 0; i < 8; i++) sha512_update(x, &pad, 1);
 	for (int i = 7; i >= 0; i--) {
 		uint8_t b = (uint8_t)(bits >> (8 * i));
 		sha512_update(x, &b, 1);
