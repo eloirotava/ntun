@@ -5,12 +5,10 @@
 #   make mips ARCH=mipsel|mips [MIPS16=1]
 #                              clientes sem libc para o roteador:
 #                              build/<prog>-<arch>[-16]
-#   rtun: RTUN_DEF='-DRTUN_PREFIX="rev-..." -DRTUN_PORT=22101 -DRTUN_LOCAL=22'
 
 CC      ?= gcc
 CFLAGS  ?= -Os -Wall -Wextra
 ARCH    ?= mipsel
-RTUN_DEF ?=
 
 # sha2.c: o c25519.c tem a verificacao Ed25519 (so o rtun/wsudp usam; no
 # MIPS o --gc-sections tira, no PC precisa ligar)
@@ -41,7 +39,7 @@ host: build/ntun build/rtun build/wsudp build/ntun-server build/vectors build/bl
 	build/sha_dump build/crypto_cmp build/tls_live
 
 build/ntun build/rtun build/wsudp build/tls_live: build/%: src/*.h | build
-	$(CC) $(CFLAGS) $(if $(filter rtun,$*),$$(echo '$(RTUN_DEF)')) -o $@ $(SRC_$*) src/sys_libc.c
+	$(CC) $(CFLAGS) -o $@ $(SRC_$*) src/sys_libc.c
 
 build/ntun-server: src/server.c $(NOISE) src/*.h | build
 	$(CC) $(CFLAGS) -o $@ src/server.c $(NOISE)
@@ -61,7 +59,7 @@ build/crypto_cmp: test/crypto_cmp.c src/c25519.c src/aead.c src/sha2.c vendor/*.
 
 mips: | build
 	for p in ntun rtun wsudp tls_live bench; do \
-	  $(ARCH)-linux-gnu-gcc $(MIPS_FLAGS) $(MIPS_LD) $$( [ $$p = rtun ] && echo '$(RTUN_DEF)' ) \
+	  $(ARCH)-linux-gnu-gcc $(MIPS_FLAGS) $(MIPS_LD) \
 	    -o build/$$p-$(ARCH)$(SUF) $$(make -s --no-print-directory srcs P=$$p) src/sys_nolibc.c src/mips.S -lgcc || exit 1; \
 	  cp build/$$p-$(ARCH)$(SUF) build/$$p-$(ARCH)$(SUF).elf; \
 	  $(ARCH)-linux-gnu-strip -s $(STRIP_R) build/$$p-$(ARCH)$(SUF); \

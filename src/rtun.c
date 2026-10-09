@@ -3,8 +3,12 @@
  * ao wstunnel da VPS para escutar em 127.0.0.1:<porta>; cada conexao ali vira
  * uma sessao para 127.0.0.1:<local> do roteador (telnet/ssh/web).
  *
- * Configuracao na compilacao: -DRTUN_PREFIX='"rev-..."' -DRTUN_PORT=22101
- * -DRTUN_LOCAL=22 (o prefixo secreto fica em /etc/wstunnel/rtun-prefix na VPS).
+ * Uso: rtun <porta-na-vps> [porta-local] [arquivo-do-prefixo]
+ *   porta-na-vps        22100-22199 (cada roteador a sua)
+ *   porta-local         22
+ *   arquivo-do-prefixo  /etc/rtun.prefix (o prefixo secreto, "rev-...";
+ *                       na VPS fica em /etc/wstunnel/rtun-prefix)
+ * O binario e o mesmo para todos os roteadores: nada secreto dentro dele.
  *
  * TLS 1.3 so com o certificado Ed25519 fixado (cert.h); uma thread, poll();
  * sempre uma conexao em espera, ate MAX_SESS sessoes. */
@@ -13,17 +17,6 @@
 #include "ws.h"
 #include "cert.h"
 
-#ifndef RTUN_PREFIX
-#define RTUN_PREFIX "rev-CONFIGURE"
-#endif
-#ifndef RTUN_PORT
-#define RTUN_PORT 22101
-#endif
-#ifndef RTUN_LOCAL
-#define RTUN_LOCAL 23
-#endif
-#define STR2(x) #x
-#define STR(x) STR2(x)
 
 #define SERVER_HOST "br.rotava.com"
 #define TLS_NAME    "wsudp.rotava.internal"
@@ -50,6 +43,8 @@ static struct sockaddr_in srv;
 static int have_srv;
 static long backoff = 2, next_try;
 static uint8_t out[16384 + 14], buf[16384];
+static unsigned vps_port, local_port = 22;
+static char path[80], claims[96];
 
 static int send_frame(struct sess *s, int op, const uint8_t *p, size_t n)
 {
@@ -100,8 +95,7 @@ static const char *open_pending(struct sess *s)
 		return "rtun: tls";
 	}
 	static char req[768];
-	long n = ws_request(req, sizeof req, "/" RTUN_PREFIX "/events", TLS_NAME,
-	                    "\",\"p\":\"ReverseTcp\",\"r\":\"127.0.0.1\",\"rp\":" STR(RTUN_PORT) "}");
+	long n = ws_request(req, sizeof req, path, TLS_NAME, claims);
 	if (n < 0 || tls_write(&s->tls, (const uint8_t *)req, (size_t)n)) {
 		x_close(fd);
 		return "rtun: escrita";
@@ -147,7 +141,7 @@ static int on_net(struct sess *s)
 		set_timeout((int)fd, SO_SNDTIMEO, IO_TIMEOUT_S); /* servico parado nao trava os outros */
 		static const uint8_t lo[4] = { 127, 0, 0, 1 };
 		struct sockaddr_in a;
-		addr4(&a, lo, RTUN_LOCAL);
+		addr4(&a, lo, local_port);
 		if (x_connect((int)fd, &a) < 0) {
 			x_close((int)fd);
 			x_log("rtun: servico local nao responde");
@@ -178,9 +172,61 @@ static int on_net(struct sess *s)
 	}
 }
 
-int main(void)
+static size_t cat(char *o, size_t n, const char *s)
 {
-	x_log("rtun: " SERVER_HOST " -> vps 127.0.0.1:" STR(RTUN_PORT) " = local 127.0.0.1:" STR(RTUN_LOCAL));
+	while (*s) o[n++] = *s++;
+	o[n] = 0;
+	return n;
+}
+
+static size_t cat_u(char *o, size_t n, unsigned v)
+{
+	char d[8];
+	int k = 0;
+	do d[k++] = (char)('0' + v % 10); while ((v /= 10) && k < 7);
+	while (k) o[n++] = d[--k];
+	o[n] = 0;
+	return n;
+}
+
+int main(int argc, char **argv)
+{
+	const char *pf = "/etc/rtun.prefix";
+	if (argc > 1) vps_port = atou(argv[1]);
+	if (argc > 2) local_port = atou(argv[2]);
+	if (argc > 3) pf = argv[3];
+	if (vps_port == 0 || vps_port > 65535) {
+		x_log("uso: rtun <porta-na-vps> [porta-local] [arquivo-do-prefixo]");
+		return 1;
+	}
+	/* prefixo: 1a linha do arquivo, so [A-Za-z0-9_-] */
+	char pre[64];
+	long fd = x_open(pf), n = fd < 0 ? -1 : x_read((int)fd, pre, sizeof pre - 1);
+	if (fd >= 0) x_close((int)fd);
+	size_t pl = 0;
+	while (n > 0 && pl < (size_t)n) {
+		char c = pre[pl];
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) break;
+		pl++;
+	}
+	pre[pl] = 0;
+	if (pl < 4) {
+		x_log("rtun: prefixo ausente ou invalido");
+		return 1;
+	}
+	size_t k = cat(path, 0, "/");
+	k = cat(path, k, pre);
+	cat(path, k, "/events");
+	k = cat(claims, 0, "\",\"p\":\"ReverseTcp\",\"r\":\"127.0.0.1\",\"rp\":");
+	k = cat_u(claims, k, vps_port);
+	cat(claims, k, "}");
+
+	static char msg[80];
+	k = cat(msg, 0, "rtun: " SERVER_HOST " -> vps 127.0.0.1:");
+	k = cat_u(msg, k, vps_port);
+	k = cat(msg, k, " = local 127.0.0.1:");
+	cat_u(msg, k, local_port);
+	x_log(msg);
 	for (int i = 0; i < MAX_SESS; i++) sess[i].local = -1;
 
 	for (;;) {

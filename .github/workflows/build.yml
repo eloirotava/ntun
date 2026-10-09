@@ -4,10 +4,6 @@ on:
   push:
   workflow_dispatch:
 
-env:
-  # prefixo marcador do rtun (mesmo tamanho do real; trocado na VPS para testar)
-  RTUN_DEF: -DRTUN_PREFIX="rev-XXXXXXXXXXXXXXXXXXXXXXXX" -DRTUN_PORT=22102 -DRTUN_LOCAL=22
-
 jobs:
   host:
     runs-on: ubuntu-24.04
@@ -15,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: PC com sanitizers
         run: |
-          make host RTUN_DEF='${{ env.RTUN_DEF }}' CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
+          make host CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
           build/vectors
           build/crypto_cmp
           build/blake2s_dump | python3 -I -c '
@@ -60,7 +56,7 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-${{ matrix.arch }}-linux-gnu binutils-${{ matrix.arch }}-linux-gnu qemu-user >/dev/null
       - name: clientes ${{ matrix.arch }}${{ matrix.mips16 && ' MIPS16' || '' }}
         run: |
-          make mips ARCH=${{ matrix.arch }} MIPS16=${{ matrix.mips16 }} RTUN_DEF='${{ env.RTUN_DEF }}'
+          make mips ARCH=${{ matrix.arch }} MIPS16=${{ matrix.mips16 }}
           S=${{ matrix.mips16 && '-16' || '' }}
           for p in ntun rtun wsudp; do
             B=build/$p-${{ matrix.arch }}$S
