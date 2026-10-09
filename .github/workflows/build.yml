@@ -91,7 +91,10 @@ jobs:
           for p in ntun rtun wsudp; do echo "build/$p-arm: $(stat -c%s build/$p-arm) bytes" | tee -a "$GITHUB_STEP_SUMMARY"; done
           file build/rtun-arm
           # nada de ponto flutuante (o R7000 nao tem VFP)
-          ! arm-linux-gnueabi-objdump -d build/rtun-arm.elf build/wsudp-arm.elf build/ntun-arm.elf | grep -E "\s(v[a-z]+|vfp)[a-z0-9.]*\s+(d|s|q)[0-9]+" | head -5
+          if arm-linux-gnueabi-objdump -d build/rtun-arm.elf build/wsudp-arm.elf build/ntun-arm.elf | grep -E "\sv[a-z]+[a-z0-9.]*\s+(d|s|q)[0-9]+"; then
+            echo "FALHOU: instrucao de ponto flutuante"; exit 1
+          fi
+          echo "sem ponto flutuante: ok"
       - name: no qemu (TLS real, ntun e wsudp ponta a ponta)
         run: |
           Q="qemu-arm -cpu cortex-a9"
