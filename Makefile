@@ -41,7 +41,7 @@ host: build/ntun build/rtun build/wsudp build/ntun-server build/vectors build/bl
 	build/sha_dump build/crypto_cmp build/tls_live
 
 build/ntun build/rtun build/wsudp build/tls_live: build/%: src/*.h | build
-	$(CC) $(CFLAGS) $(if $(filter rtun,$*),$(RTUN_DEF)) -o $@ $(SRC_$*) src/sys_libc.c
+	$(CC) $(CFLAGS) $(if $(filter rtun,$*),$$(echo '$(RTUN_DEF)')) -o $@ $(SRC_$*) src/sys_libc.c
 
 build/ntun-server: src/server.c $(NOISE) src/*.h | build
 	$(CC) $(CFLAGS) -o $@ src/server.c $(NOISE)
