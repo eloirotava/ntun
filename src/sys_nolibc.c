@@ -127,4 +127,8 @@ void __aeabi_memset(void *d, size_t n, int c) { memset(d, c, n); }
 void __aeabi_memclr(void *d, size_t n) { memset(d, 0, n); }
 void __aeabi_memclr4(void *d, size_t n) { memset(d, 0, n); }
 void __aeabi_memclr8(void *d, size_t n) { memset(d, 0, n); }
+/* divisao por zero da libgcc (o ARMv7-A nao divide em hardware): a dela
+ * chama raise() da libc. Nunca dividimos por zero; devolve 0 se acontecer. */
+int __aeabi_idiv0(int r) { (void)r; return 0; }
+long long __aeabi_ldiv0(long long r) { (void)r; return 0; }
 #endif
