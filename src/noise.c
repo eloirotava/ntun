@@ -1,8 +1,9 @@
 /* Noise_IK_25519_ChaChaPoly_BLAKE2s; ver noise.h. Os nomes seguem o
  * documento do Noise (secao 5: CipherState, SymmetricState, HandshakeState). */
 #include "noise.h"
-#include "../vendor/monocypher.h"
+#include "aead.h"
 #include "blake2s.h"
+#include "x25519.h"
 
 #define HASHLEN  32
 #define BLOCKLEN 64
@@ -11,11 +12,11 @@ static const char protocol_name[] = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 static void copy(uint8_t *d, const uint8_t *s, size_t n) { while (n--) *d++ = *s++; }
 
-void noise_wipe(void *p, size_t n) { crypto_wipe(p, n); }
+void noise_wipe(void *p, size_t n) { wipe(p, n); }
 
 void noise_public_key(uint8_t pub[32], const uint8_t priv[32])
 {
-	crypto_x25519_public_key(pub, priv);
+	x25519_base(pub, priv);
 }
 
 static void hash2(uint8_t out[HASHLEN], const uint8_t *a, size_t al, const uint8_t *b, size_t bl)
@@ -41,9 +42,9 @@ static void hmac(uint8_t out[HASHLEN], const uint8_t key[HASHLEN],
 	blake2s_final(&x, inner);
 	for (int i = 0; i < BLOCKLEN; i++) pad[i] ^= 0x36 ^ 0x5c;
 	hash2(out, pad, BLOCKLEN, inner, HASHLEN);
-	crypto_wipe(pad, sizeof pad);
-	crypto_wipe(inner, sizeof inner);
-	crypto_wipe(&x, sizeof x);
+	wipe(pad, sizeof pad);
+	wipe(inner, sizeof inner);
+	wipe(&x, sizeof x);
 }
 
 /* HKDF com 2 saidas */
@@ -55,24 +56,22 @@ static void hkdf(const uint8_t ck[HASHLEN], const uint8_t *ikm, size_t ikm_len,
 	hmac(t, ck, ikm, ikm_len, 0, 0);
 	hmac(o1, t, &one, 1, 0, 0);
 	hmac(o2, t, o1, HASHLEN, &two, 1);
-	crypto_wipe(t, sizeof t);
+	wipe(t, sizeof t);
 }
 
 /* nonce do ChaChaPoly no Noise: 4 bytes zero + contador de 64 bits LE */
-static void aead_ctx(crypto_aead_ctx *x, const noise_cipher *c)
+static void nonce(uint8_t n[12], const noise_cipher *c)
 {
-	uint8_t n[12] = {0};
+	for (int i = 0; i < 4; i++) n[i] = 0;
 	for (int i = 0; i < 8; i++) n[4 + i] = (uint8_t)(c->n >> (8 * i));
-	crypto_aead_init_ietf(x, c->k, n);
 }
 
 static size_t encrypt_ad(noise_cipher *c, const uint8_t *ad, size_t adl,
                          const uint8_t *in, size_t len, uint8_t *out)
 {
-	crypto_aead_ctx x;
-	aead_ctx(&x, c); /* contexto novo por mensagem: o write troca a chave */
-	crypto_aead_write(&x, out, out + len, ad, adl, in, len);
-	crypto_wipe(&x, sizeof x);
+	uint8_t n[12];
+	nonce(n, c);
+	aead_seal(out, c->k, n, ad, adl, in, len);
 	c->n++;
 	return len + NOISE_TAG;
 }
@@ -80,15 +79,12 @@ static size_t encrypt_ad(noise_cipher *c, const uint8_t *ad, size_t adl,
 static long decrypt_ad(noise_cipher *c, const uint8_t *ad, size_t adl,
                        const uint8_t *in, size_t len, uint8_t *out)
 {
-	crypto_aead_ctx x;
+	uint8_t n[12];
 	if (len < NOISE_TAG) return -1;
-	len -= NOISE_TAG;
-	aead_ctx(&x, c);
-	int bad = crypto_aead_read(&x, out, in + len, ad, adl, in, len);
-	crypto_wipe(&x, sizeof x);
-	if (bad) return -1;
+	nonce(n, c);
+	if (aead_open(out, c->k, n, ad, adl, in, len)) return -1;
 	c->n++;
-	return (long)len;
+	return (long)(len - NOISE_TAG);
 }
 
 size_t noise_encrypt(noise_cipher *c, const uint8_t *in, size_t len, uint8_t *out)
@@ -111,16 +107,16 @@ static int mix_dh(noise_hs *hs, const uint8_t priv[32], const uint8_t pub[32])
 {
 	uint8_t dh[32], o1[HASHLEN], o2[HASHLEN];
 	uint8_t z = 0;
-	crypto_x25519(dh, priv, pub);
+	x25519(dh, priv, pub);
 	for (int i = 0; i < 32; i++) z |= dh[i];
 	hkdf(hs->ck, dh, 32, o1, o2);
 	copy(hs->ck, o1, HASHLEN);
 	copy(hs->c.k, o2, 32);
 	hs->c.n = 0;
 	hs->c.has_k = 1;
-	crypto_wipe(dh, sizeof dh);
-	crypto_wipe(o1, sizeof o1);
-	crypto_wipe(o2, sizeof o2);
+	wipe(dh, sizeof dh);
+	wipe(o1, sizeof o1);
+	wipe(o2, sizeof o2);
 	return z ? 0 : -1;
 }
 
@@ -147,8 +143,8 @@ static void split(noise_hs *hs, noise_cipher *c1, noise_cipher *c2)
 	copy(c2->k, o2, 32);
 	c1->n = c2->n = 0;
 	c1->has_k = c2->has_k = 1;
-	crypto_wipe(o1, sizeof o1);
-	crypto_wipe(o2, sizeof o2);
+	wipe(o1, sizeof o1);
+	wipe(o2, sizeof o2);
 	/* o estado do handshake (chaves efemeras) quem limpa e o chamador,
 	 * depois de usar hs->h se quiser (noise_wipe(hs, sizeof *hs)) */
 }
@@ -163,7 +159,7 @@ void noise_ik_init(noise_hs *hs, int initiator, const uint8_t s_priv[32],
 	copy(hs->ck, hs->h, HASHLEN);
 	mix_hash(hs, prologue, prologue_len);
 	copy(hs->s_priv, s_priv, 32);
-	crypto_x25519_public_key(hs->s_pub, s_priv);
+	x25519_base(hs->s_pub, s_priv);
 	/* pre-mensagem "<- s": a estatica do respondedor */
 	if (initiator) {
 		copy(hs->rs, rs, 32);
@@ -178,7 +174,7 @@ long noise_ik_write1(noise_hs *hs, const uint8_t e_priv[32],
 {
 	size_t o = 32;
 	copy(hs->e_priv, e_priv, 32);
-	crypto_x25519_public_key(hs->e_pub, e_priv);
+	x25519_base(hs->e_pub, e_priv);
 	copy(out, hs->e_pub, 32);                       /* e */
 	mix_hash(hs, hs->e_pub, 32);
 	if (mix_dh(hs, hs->e_priv, hs->rs)) return -1;  /* es */
@@ -205,7 +201,7 @@ long noise_ik_write2(noise_hs *hs, const uint8_t e_priv[32],
 {
 	size_t o = 32;
 	copy(hs->e_priv, e_priv, 32);
-	crypto_x25519_public_key(hs->e_pub, e_priv);
+	x25519_base(hs->e_pub, e_priv);
 	copy(out, hs->e_pub, 32);                       /* e */
 	mix_hash(hs, hs->e_pub, 32);
 	if (mix_dh(hs, hs->e_priv, hs->re)) return -1;  /* ee */

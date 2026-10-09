@@ -6,7 +6,8 @@
 
 CC      ?= gcc
 CFLAGS  ?= -Os -Wall -Wextra
-SRC_C    = src/client.c src/noise.c src/blake2s.c vendor/monocypher.c
+CRYPTO   = src/noise.c src/blake2s.c src/x25519.c src/aead.c
+SRC_C    = src/client.c $(CRYPTO)
 
 # cliente MIPS: estatico, sem libc, sem PIC; so mips.S fica em MIPS32 normal.
 # Sem -msoft-float: os cabecalhos da glibc do Debian nao aceitam, e o codigo
@@ -19,16 +20,20 @@ ifeq ($(MIPS16),1)
 MIPS_FLAGS += -mips16 -minterlink-mips16
 endif
 
-host: build/ntun build/ntun-server build/vectors build/blake2s_dump
+host: build/ntun build/ntun-server build/vectors build/blake2s_dump build/crypto_cmp
 
 build/ntun: $(SRC_C) src/sys_libc.c src/*.h | build
 	$(CC) $(CFLAGS) -o $@ $(SRC_C) src/sys_libc.c
 
-build/ntun-server: src/server.c src/noise.c src/blake2s.c vendor/monocypher.c src/*.h | build
-	$(CC) $(CFLAGS) -o $@ src/server.c src/noise.c src/blake2s.c vendor/monocypher.c
+build/ntun-server: src/server.c $(CRYPTO) src/*.h | build
+	$(CC) $(CFLAGS) -o $@ src/server.c $(CRYPTO)
 
-build/vectors: test/vectors.c src/noise.c src/blake2s.c vendor/monocypher.c | build
-	$(CC) $(CFLAGS) -o $@ test/vectors.c src/noise.c src/blake2s.c vendor/monocypher.c
+build/vectors: test/vectors.c $(CRYPTO) | build
+	$(CC) $(CFLAGS) -o $@ test/vectors.c $(CRYPTO)
+
+# a Monocypher so entra aqui, como referencia
+build/crypto_cmp: test/crypto_cmp.c src/x25519.c src/aead.c vendor/monocypher.c | build
+	$(CC) $(CFLAGS) -o $@ test/crypto_cmp.c src/x25519.c src/aead.c vendor/monocypher.c
 
 build/blake2s_dump: test/blake2s_dump.c src/blake2s.c | build
 	$(CC) $(CFLAGS) -o $@ test/blake2s_dump.c src/blake2s.c

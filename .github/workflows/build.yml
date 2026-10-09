@@ -13,6 +13,7 @@ jobs:
         run: |
           make host CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
           build/vectors
+          build/crypto_cmp
           build/blake2s_dump | python3 -I -c '
           import sys, hashlib
           d = bytes((i * 7 + 3) & 255 for i in range(300)); k = 0
