@@ -1,5 +1,5 @@
-/* sys.h direto no kernel (Linux MIPS o32), sem libc: so o que o cliente usa.
- * raw_syscall e __start estao em mips.S. */
+/* sys.h direto no kernel (Linux MIPS o32 e ARM EABI), sem libc: so o que os
+ * clientes usam. raw_syscall e __start estao em mips.S / arm.S. */
 #include "sys.h"
 #include <asm/unistd.h>
 #include <time.h>
@@ -116,3 +116,15 @@ i64 __ashrdi3(i64 a, int b)
 	if (b >= 32) return (i64)join((uint32_t)(hi >> 31), (uint32_t)(hi >> (b - 32)));
 	return (i64)join((uint32_t)(hi >> b), lo >> b | (uint32_t)hi << (32 - b));
 }
+
+#ifdef __ARM_EABI__
+/* o gcc do ARM EABI pode chamar estas no lugar de memcpy/memset */
+void __aeabi_memcpy(void *d, const void *s, size_t n) { memcpy(d, s, n); }
+void __aeabi_memcpy4(void *d, const void *s, size_t n) { memcpy(d, s, n); }
+void __aeabi_memcpy8(void *d, const void *s, size_t n) { memcpy(d, s, n); }
+void __aeabi_memmove(void *d, const void *s, size_t n) { memmove(d, s, n); }
+void __aeabi_memset(void *d, size_t n, int c) { memset(d, c, n); }
+void __aeabi_memclr(void *d, size_t n) { memset(d, 0, n); }
+void __aeabi_memclr4(void *d, size_t n) { memset(d, 0, n); }
+void __aeabi_memclr8(void *d, size_t n) { memset(d, 0, n); }
+#endif

@@ -79,3 +79,31 @@ jobs:
             build/rtun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
             build/wsudp-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
             build/bench-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+
+  arm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi qemu-user >/dev/null
+      - name: clientes ARMv7 Thumb-2
+        run: |
+          make arm
+          for p in ntun rtun wsudp; do echo "build/$p-arm: $(stat -c%s build/$p-arm) bytes" | tee -a "$GITHUB_STEP_SUMMARY"; done
+          file build/rtun-arm
+          # nada de ponto flutuante (o R7000 nao tem VFP)
+          ! arm-linux-gnueabi-objdump -d build/rtun-arm.elf build/wsudp-arm.elf build/ntun-arm.elf | grep -E "\s(v[a-z]+|vfp)[a-z0-9.]*\s+(d|s|q)[0-9]+" | head -5
+      - name: no qemu (TLS real, ntun e wsudp ponta a ponta)
+        run: |
+          Q="qemu-arm -cpu cortex-a9"
+          $Q build/tls_live-arm
+          make build/ntun-server
+          test/e2e.sh build/ntun-arm "$Q"
+          test/wsudp_live.sh build/wsudp-arm "$Q"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clientes-arm
+          path: |
+            build/ntun-arm
+            build/rtun-arm
+            build/wsudp-arm
+            build/bench-arm

@@ -3,6 +3,7 @@
 #
 #   make host                  tudo no PC (libc) + testes
 #   make mips ARCH=mipsel|mips [MIPS16=1]
+#   make arm                   (ARMv7, Thumb-2, soft-float: R7000, rk322x)
 #                              clientes sem libc para o roteador:
 #                              build/<prog>-<arch>[-16]
 
@@ -65,6 +66,22 @@ mips: | build
 	  $(ARCH)-linux-gnu-strip -s $(STRIP_R) build/$$p-$(ARCH)$(SUF); \
 	done
 
+# ARM: ARMv7 em Thumb-2 (denso, como o MIPS16), soft-float (o BCM4709 do
+# R7000 nao tem VFP), estatico e sem libc; so arm.S fica em modo ARM.
+ARM_FLAGS = -Os -Wall -Wextra -march=armv7-a -mthumb -mfloat-abi=soft \
+	-ffreestanding -fno-builtin -fno-stack-protector -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections -fno-tree-loop-distribute-patterns -fno-pic
+ARM_LD    = -static -nostdlib -Wl,-z,noexecstack -Wl,--gc-sections -Wl,-e,__start \
+	-Wl,--build-id=none -Wl,-z,norelro
+
+arm: | build
+	for p in ntun rtun wsudp tls_live bench; do \
+	  arm-linux-gnueabi-gcc $(ARM_FLAGS) $(ARM_LD) \
+	    -o build/$$p-arm $$(make -s --no-print-directory srcs P=$$p) src/sys_nolibc.c src/arm.S -lgcc || exit 1; \
+	  cp build/$$p-arm build/$$p-arm.elf; \
+	  arm-linux-gnueabi-strip -s -R .comment -R .ARM.attributes build/$$p-arm; \
+	done
+
 srcs:
 	@echo $(SRC_$(P))
 
@@ -73,4 +90,4 @@ build:
 
 clean:
 	rm -rf build
-.PHONY: host mips srcs clean
+.PHONY: host mips arm srcs clean
