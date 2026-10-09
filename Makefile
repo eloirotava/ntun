@@ -52,9 +52,16 @@ mips: | build
 	mips-linux-gnu-strip -s -R .comment -R .pdr -R .mdebug.abi32 -R .MIPS.abiflags -R .reginfo \
 		-R .gnu.attributes build/ntun-mips$(if $(MIPS16),-16)
 
+# benchmark da cifra no roteador: make bench ARCH=mipsel [MIPS16=1]
+ARCH ?= mipsel
+bench: | build
+	$(ARCH)-linux-gnu-gcc $(MIPS_FLAGS) $(MIPS_LD) -o build/bench-$(ARCH)$(if $(MIPS16),-16) \
+		test/bench.c src/x25519.c src/aead.c src/sys_nolibc.c src/mips.S -lgcc
+	$(ARCH)-linux-gnu-strip -s build/bench-$(ARCH)$(if $(MIPS16),-16)
+
 build:
 	mkdir -p build
 
 clean:
 	rm -rf build
-.PHONY: host mipsel mips clean
+.PHONY: host mipsel mips bench clean

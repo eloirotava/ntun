@@ -53,6 +53,8 @@ jobs:
           ${{ matrix.arch }}-linux-gnu-size -A $B | grep -E "^\.(text|rodata|data|bss)"
           echo "maiores simbolos:"; ${{ matrix.arch }}-linux-gnu-nm --size-sort -r -S $B.elf | head -25
           echo "$B: $(stat -c%s $B) bytes" >> "$GITHUB_STEP_SUMMARY"
+      - name: benchmark da cifra (roda no roteador)
+        run: make bench ARCH=${{ matrix.arch }} MIPS16=${{ matrix.mips16 }}
       - name: ponta a ponta com o cliente no qemu
         run: |
           make build/ntun-server
@@ -63,3 +65,4 @@ jobs:
           name: ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
           path: |
             build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+            build/bench-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
