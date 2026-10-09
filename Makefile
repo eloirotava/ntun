@@ -8,8 +8,10 @@ CC      ?= gcc
 CFLAGS  ?= -Os -Wall -Wextra
 SRC_C    = src/client.c src/noise.c vendor/monocypher.c
 
-# cliente MIPS: estatico, sem libc, sem PIC; so mips.S fica em MIPS32 normal
-MIPS_FLAGS = -Os -Wall -Wextra -mips32r2 -msoft-float -mno-abicalls -fno-pic -G0 \
+# cliente MIPS: estatico, sem libc, sem PIC; so mips.S fica em MIPS32 normal.
+# Sem -msoft-float: os cabecalhos da glibc do Debian nao aceitam, e o codigo
+# nao usa ponto flutuante.
+MIPS_FLAGS = -Os -Wall -Wextra -mips32r2 -mno-abicalls -fno-pic -G0 \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-asynchronous-unwind-tables \
 	-ffunction-sections -fdata-sections -fno-tree-loop-distribute-patterns
 MIPS_LD    = -static -nostdlib -Wl,--gc-sections -Wl,-e,__start -Wl,--build-id=none -Wl,-z,norelro

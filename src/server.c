@@ -264,7 +264,7 @@ static int load_config(const char *dir)
 			continue;
 		}
 		c->port = port;
-		snprintf(c->name, sizeof c->name, "%s", name[0] ? name : key);
+		snprintf(c->name, sizeof c->name, "%.39s", name[0] ? name : key);
 		c->lfd = listen_on(htonl(INADDR_LOOPBACK), port);
 		if (c->lfd < 0) {
 			logf_("ntun-server: %s: porta 127.0.0.1:%u ocupada", c->name, port);
