@@ -34,6 +34,9 @@
 #define MAX_PENDING     4   /* conexoes em espera por roteador */
 #define SERVER_DEAD_S   90  /* o roteador pinga a cada 25 s */
 #define USER_TIMEOUT_S  15
+#define MAX_WAITING     64
+/* quem conecta sem conexao em espera aguarda o roteador abrir a proxima */
+#define USER_WAIT_S     10
 
 enum { L_FREE, L_HS, L_WAIT_READY, L_PENDING, L_ACTIVE };
 
@@ -55,6 +58,13 @@ struct link {
 static struct client clients[MAX_CLIENTS];
 static int nclients;
 static struct link links[MAX_LINKS];
+
+/* usuarios esperando uma conexao em espera do seu roteador */
+static struct waiting {
+	int fd, client;
+	long since;
+} waiting[MAX_WAITING];
+static int nwaiting;
 static uint8_t server_priv[32];
 static uint8_t frame[FRAME_MAX], clear[MSG_MAX];
 
@@ -186,6 +196,18 @@ static int on_handshake(struct link *l, const uint8_t *msg, size_t m)
 	return 0;
 }
 
+static int send_msg(struct link *l, int type, const uint8_t *d, size_t n);
+static void link_close(struct link *l, const char *why);
+
+/* liga um usuario a uma conexao em espera */
+static void pair(struct link *l, int ufd)
+{
+	set_sndtimeo(ufd, USER_TIMEOUT_S);
+	l->user = ufd;
+	l->state = L_ACTIVE;
+	if (send_msg(l, T_GO, 0, 0)) link_close(l, "escrita");
+}
+
 static void on_ready(struct link *l)
 {
 	/* no maximo MAX_PENDING em espera por roteador: fecha a mais velha */
@@ -200,6 +222,15 @@ static void on_ready(struct link *l)
 	if (count >= MAX_PENDING) link_close(oldest, 0);
 	l->state = L_PENDING;
 	l->since = now();
+	/* alguem ja esperava por este roteador? (o mais antigo primeiro) */
+	for (int i = 0; i < nwaiting; i++) {
+		if (waiting[i].client != l->client) continue;
+		int ufd = waiting[i].fd;
+		/* tira da fila mantendo a ordem de chegada */
+		memmove(&waiting[i], &waiting[i + 1], (size_t)(--nwaiting - i) * sizeof waiting[0]);
+		pair(l, ufd);
+		return;
+	}
 }
 
 /* quadros completos de um roteador; -1 = link fechado */
@@ -349,15 +380,13 @@ int main(int argc, char **argv)
 					if (l->state == L_PENDING && l->client == w - 1000000 && (!best || l->last_rx > best->last_rx))
 						best = l;
 				}
-				if (!best) {
-					logf_("ntun-server: %s: sem conexao em espera", c->name);
+				if (best) {
+					pair(best, ufd);
+				} else if (nwaiting < MAX_WAITING) {
+					waiting[nwaiting++] = (struct waiting){ ufd, w - 1000000, now() };
+				} else {
 					close(ufd);
-					continue;
 				}
-				set_sndtimeo(ufd, USER_TIMEOUT_S);
-				best->user = ufd;
-				best->state = L_ACTIVE;
-				if (send_msg(best, T_GO, 0, 0)) link_close(best, "escrita");
 			} else if (w >= 2000000) {
 				struct link *l = &links[w - 2000000];
 				if (l->state != L_ACTIVE) continue;
@@ -379,8 +408,14 @@ int main(int argc, char **argv)
 			}
 		}
 
-		/* prazos: handshake parado, roteador sem pingar */
+		/* prazos: usuario esperando demais, handshake parado, roteador sem pingar */
 		long t = now();
+		for (int i = 0; i < nwaiting;) {
+			if (t - waiting[i].since <= USER_WAIT_S) { i++; continue; }
+			logf_("ntun-server: %s: sem conexao em espera", clients[waiting[i].client].name);
+			close(waiting[i].fd);
+			memmove(&waiting[i], &waiting[i + 1], (size_t)(--nwaiting - i) * sizeof waiting[0]);
+		}
 		for (int i = 0; i < MAX_LINKS; i++) {
 			struct link *l = &links[i];
 			if (l->state == L_FREE) continue;
