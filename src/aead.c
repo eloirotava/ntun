@@ -54,49 +54,51 @@ static void chacha_xor(uint8_t *out, const uint8_t *in, size_t len,
 	wipe(ks, sizeof ks);
 }
 
-/* ---- Poly1305 (TweetNaCl) */
-
-static void add1305(uint32_t h[17], const uint32_t c[17])
-{
-	uint32_t u = 0;
-	for (int j = 0; j < 17; j++) {
-		u += h[j] + c[j];
-		h[j] = u & 255;
-		u >>= 8;
-	}
-}
+/* ---- Poly1305 com 5 limbs de 26 bits (como o poly1305-donna de 32 bits):
+ * 25 produtos 32 x 32 -> 64 por bloco (um multu cada no MIPS), contra 289
+ * da versao com limbs de 8 bits. */
 
 typedef struct {
-	uint32_t h[17], r[17];
+	uint32_t r[5], s[4], h[5];
 } poly;
+
+static void poly_init(poly *p, const uint8_t key[16])
+{
+	p->r[0] = ld32(key + 0) & 0x3ffffff;
+	p->r[1] = (ld32(key + 3) >> 2) & 0x3ffff03;
+	p->r[2] = (ld32(key + 6) >> 4) & 0x3ffc0ff;
+	p->r[3] = (ld32(key + 9) >> 6) & 0x3f03fff;
+	p->r[4] = (ld32(key + 12) >> 8) & 0x00fffff;
+	for (int i = 0; i < 4; i++) p->s[i] = p->r[i + 1] * 5;
+	for (int i = 0; i < 5; i++) p->h[i] = 0;
+}
 
 /* bloco de 16 bytes (os trechos do AEAD ja vem completados com zeros) */
 static void poly_block(poly *p, const uint8_t m[16])
 {
-	uint32_t c[17], x[17];
-	for (int j = 0; j < 16; j++) c[j] = m[j];
-	c[16] = 1;
-	add1305(p->h, c);
-	for (int i = 0; i < 17; i++) {
-		x[i] = 0;
-		for (int j = 0; j < 17; j++)
-			x[i] += p->h[j] * (j <= i ? p->r[i - j] : 320 * p->r[i + 17 - j]);
+	const uint32_t *r = p->r, *s = p->s;
+	uint32_t *h = p->h;
+	h[0] += ld32(m + 0) & 0x3ffffff;
+	h[1] += (ld32(m + 3) >> 2) & 0x3ffffff;
+	h[2] += (ld32(m + 6) >> 4) & 0x3ffffff;
+	h[3] += (ld32(m + 9) >> 6) & 0x3ffffff;
+	h[4] += (ld32(m + 12) >> 8) | (1 << 24);
+	/* d[i] = soma de h[j] * r[i-j], com r[k] (k < 0) dobrado em 5 * r[k+5] */
+	uint64_t d[5];
+	for (int i = 0; i < 5; i++) {
+		d[i] = 0;
+		for (int j = 0; j < 5; j++)
+			d[i] += (uint64_t)h[j] * (j <= i ? r[i - j] : s[i - j + 4]);
 	}
-	uint32_t u = 0;
-	for (int j = 0; j < 16; j++) {
-		u += x[j];
-		p->h[j] = u & 255;
-		u >>= 8;
+	uint32_t c = 0;
+	for (int i = 0; i < 5; i++) {
+		d[i] += c;
+		c = (uint32_t)(d[i] >> 26);
+		h[i] = (uint32_t)d[i] & 0x3ffffff;
 	}
-	u += x[16];
-	p->h[16] = u & 3;
-	u = 5 * (u >> 2);
-	for (int j = 0; j < 16; j++) {
-		u += p->h[j];
-		p->h[j] = u & 255;
-		u >>= 8;
-	}
-	p->h[16] += u;
+	h[0] += c * 5;
+	h[1] += h[0] >> 26;
+	h[0] &= 0x3ffffff;
 }
 
 static void poly_padded(poly *p, const uint8_t *m, size_t n)
@@ -114,17 +116,10 @@ static void poly_padded(poly *p, const uint8_t *m, size_t n)
 static void tag(uint8_t out[16], const uint8_t key[32], const uint8_t nonce[12],
                 const uint8_t *ad, size_t adl, const uint8_t *c, size_t len)
 {
-	static const uint32_t minusp[17] = { 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 252 };
 	uint8_t pk[64], lens[16];
 	poly p;
-	uint32_t g[17], s[17];
 	chacha_block(pk, key, nonce, 0);
-	for (int j = 0; j < 17; j++) {
-		p.h[j] = 0;
-		p.r[j] = j < 16 ? pk[j] : 0;
-	}
-	p.r[3] &= 15, p.r[4] &= 252, p.r[7] &= 15, p.r[8] &= 252;
-	p.r[11] &= 15, p.r[12] &= 252, p.r[15] &= 15;
+	poly_init(&p, pk);
 	poly_padded(&p, ad, adl);
 	poly_padded(&p, c, len);
 	for (int i = 0; i < 8; i++) {
@@ -132,14 +127,41 @@ static void tag(uint8_t out[16], const uint8_t key[32], const uint8_t nonce[12],
 		lens[8 + i] = (uint8_t)((uint64_t)len >> (8 * i));
 	}
 	poly_block(&p, lens);
-	/* h mod p: subtrai p se couber, sem desvio; depois soma s */
-	for (int j = 0; j < 17; j++) g[j] = p.h[j];
-	add1305(p.h, minusp);
-	uint32_t m = -(p.h[16] >> 7);
-	for (int j = 0; j < 17; j++) p.h[j] ^= m & (g[j] ^ p.h[j]);
-	for (int j = 0; j < 17; j++) s[j] = j < 16 ? pk[16 + j] : 0;
-	add1305(p.h, s);
-	for (int j = 0; j < 16; j++) out[j] = (uint8_t)p.h[j];
+
+	/* carrega tudo, e h mod p: subtrai p se couber, sem desvio */
+	uint32_t *h = p.h, g[5], c = 0;
+	for (int i = 1; i < 5; i++) {
+		h[i] += c;
+		c = h[i] >> 26;
+		h[i] &= 0x3ffffff;
+	}
+	h[0] += c * 5;
+	c = h[0] >> 26;
+	h[0] &= 0x3ffffff;
+	h[1] += c;
+	c = 5;
+	for (int i = 0; i < 5; i++) {
+		g[i] = h[i] + c;
+		c = g[i] >> 26;
+		g[i] &= 0x3ffffff;
+	}
+	g[4] = g[4] + (c << 26) - (1 << 26); /* h + 5 - 2^130 */
+	uint32_t m = (g[4] >> 31) - 1;       /* tudo 1 se h >= p */
+	for (int i = 0; i < 5; i++) h[i] = (h[i] & ~m) | (g[i] & m);
+
+	/* h (130 bits em 26) -> 128 bits em 32, + s */
+	uint32_t w[4] = {
+		h[0] | h[1] << 26,
+		h[1] >> 6 | h[2] << 20,
+		h[2] >> 12 | h[3] << 14,
+		h[3] >> 18 | h[4] << 8,
+	};
+	uint64_t f = 0;
+	for (int i = 0; i < 4; i++) {
+		f += (uint64_t)w[i] + ld32(pk + 16 + 4 * i);
+		for (int k = 0; k < 4; k++) out[4 * i + k] = (uint8_t)(f >> (8 * k));
+		f >>= 32;
+	}
 	wipe(pk, sizeof pk);
 	wipe(&p, sizeof p);
 }

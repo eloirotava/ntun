@@ -1,6 +1,5 @@
-/* ChaCha20-Poly1305 (RFC 8439) compacto. ChaCha com os rounds em laco;
- * Poly1305 no estilo do TweetNaCl (17 limbs de 8 bits em u32: nada de
- * multiplicacao de 64 bits, cara no MIPS de 32 bits). */
+/* ChaCha20-Poly1305 (RFC 8439). ChaCha com os rounds em laco (compacto);
+ * Poly1305 com 5 limbs de 26 bits (rapido: 25 multu por bloco de 16 bytes). */
 #ifndef NTUN_AEAD_H
 #define NTUN_AEAD_H
 
