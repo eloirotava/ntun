@@ -1,0 +1,54 @@
+name: ntun
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: PC com sanitizers (vetor Cacophony e ponta a ponta)
+        run: |
+          make host CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
+          build/vectors
+          test/e2e.sh build/ntun
+      - name: servidor para a VPS (x86_64, sem sanitizer)
+        run: |
+          rm -f build/ntun-server && make build/ntun-server CFLAGS="-O2 -Wall -Wextra -Werror"
+          strip build/ntun-server && ls -l build/ntun-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ntun-server
+          path: build/ntun-server
+
+  mips:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: mipsel, qemu: qemu-mipsel, mips16: "" }
+          - { arch: mipsel, qemu: qemu-mipsel, mips16: "1" }
+          - { arch: mips,   qemu: qemu-mips,   mips16: "" }
+          - { arch: mips,   qemu: qemu-mips,   mips16: "1" }
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-${{ matrix.arch }}-linux-gnu binutils-${{ matrix.arch }}-linux-gnu qemu-user >/dev/null
+      - name: cliente ${{ matrix.arch }}${{ matrix.mips16 && ' MIPS16' || '' }}
+        run: |
+          make ${{ matrix.arch }} MIPS16=${{ matrix.mips16 }}
+          B=build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+          ls -l $B; file $B
+          ${{ matrix.arch }}-linux-gnu-size -A $B | grep -E "^\.(text|rodata|data|bss)"
+          echo "$B: $(stat -c%s $B) bytes" >> "$GITHUB_STEP_SUMMARY"
+      - name: ponta a ponta com o cliente no qemu
+        run: |
+          make build/ntun-server
+          B=build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+          test/e2e.sh $B "${{ matrix.qemu }} -cpu 24Kc"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+          path: build/ntun-${{ matrix.arch }}*
