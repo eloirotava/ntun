@@ -18,6 +18,12 @@ long x_sendto(int fd, const void *b, size_t n, const struct sockaddr_in *a)
 	R(sendto(fd, b, n, 0, (const struct sockaddr *)a, sizeof *a));
 }
 long x_recv(int fd, void *b, size_t n, int fl) { R(recv(fd, b, n, fl)); }
+long x_recvfrom(int fd, void *b, size_t n, int fl, struct sockaddr_in *f)
+{
+	socklen_t l = sizeof *f;
+	R(recvfrom(fd, b, n, fl, (struct sockaddr *)f, &l));
+}
+long x_bind(int fd, const struct sockaddr_in *a) { R(bind(fd, (const struct sockaddr *)a, sizeof *a)); }
 long x_close(int fd) { R(close(fd)); }
 long x_open(const char *p) { R(open(p, O_RDONLY | O_CLOEXEC)); }
 long x_getrandom(void *b, size_t n) { R(getrandom(b, n, 0)); }

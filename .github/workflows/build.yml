@@ -1,17 +1,21 @@
-name: ntun
+name: tuneis
 
 on:
   push:
   workflow_dispatch:
+
+env:
+  # prefixo marcador do rtun (mesmo tamanho do real; trocado na VPS para testar)
+  RTUN_DEF: -DRTUN_PREFIX="rev-XXXXXXXXXXXXXXXXXXXXXXXX" -DRTUN_PORT=22102 -DRTUN_LOCAL=22
 
 jobs:
   host:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: PC com sanitizers (vetor Cacophony e ponta a ponta)
+      - name: PC com sanitizers
         run: |
-          make host CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
+          make host RTUN_DEF='${{ env.RTUN_DEF }}' CFLAGS="-O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all"
           build/vectors
           build/crypto_cmp
           build/blake2s_dump | python3 -I -c '
@@ -19,11 +23,20 @@ jobs:
           d = bytes((i * 7 + 3) & 255 for i in range(300)); k = 0
           for l in sys.stdin:
               n, h = l.split(); n = int(n)
-              assert hashlib.blake2s(d[:n]).hexdigest() == h, n
-              k += 1
+              assert hashlib.blake2s(d[:n]).hexdigest() == h, n; k += 1
           assert k == 301; print("blake2s: 301 tamanhos iguais ao hashlib")'
+          build/sha_dump | python3 -I -c '
+          import sys, hashlib
+          d = bytes((i * 7 + 3) & 255 for i in range(300)); k = 0
+          for l in sys.stdin:
+              n, a, b = l.split(); n = int(n)
+              assert hashlib.sha256(d[:n]).hexdigest() == a, n
+              assert hashlib.sha512(d[:n]).hexdigest() == b, n; k += 1
+          assert k == 301; print("sha256/sha512: 301 tamanhos iguais ao hashlib")'
+          build/tls_live
           test/e2e.sh build/ntun
-      - name: servidor para a VPS (x86_64, sem sanitizer)
+          test/wsudp_live.sh build/wsudp
+      - name: servidor do ntun para a VPS (x86_64)
         run: |
           rm -f build/ntun-server && make build/ntun-server CFLAGS="-O2 -Wall -Wextra -Werror"
           strip build/ntun-server && ls -l build/ntun-server
@@ -45,24 +58,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-${{ matrix.arch }}-linux-gnu binutils-${{ matrix.arch }}-linux-gnu qemu-user >/dev/null
-      - name: cliente ${{ matrix.arch }}${{ matrix.mips16 && ' MIPS16' || '' }}
+      - name: clientes ${{ matrix.arch }}${{ matrix.mips16 && ' MIPS16' || '' }}
         run: |
-          make ${{ matrix.arch }} MIPS16=${{ matrix.mips16 }}
-          B=build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
-          ls -l $B; file $B
-          ${{ matrix.arch }}-linux-gnu-size -A $B | grep -E "^\.(text|rodata|data|bss)"
-          echo "maiores simbolos:"; ${{ matrix.arch }}-linux-gnu-nm --size-sort -r -S $B.elf | head -25
-          echo "$B: $(stat -c%s $B) bytes" >> "$GITHUB_STEP_SUMMARY"
-      - name: benchmark da cifra (roda no roteador)
-        run: make bench ARCH=${{ matrix.arch }} MIPS16=${{ matrix.mips16 }}
-      - name: ponta a ponta com o cliente no qemu
+          make mips ARCH=${{ matrix.arch }} MIPS16=${{ matrix.mips16 }} RTUN_DEF='${{ env.RTUN_DEF }}'
+          S=${{ matrix.mips16 && '-16' || '' }}
+          for p in ntun rtun wsudp; do
+            B=build/$p-${{ matrix.arch }}$S
+            echo "$B: $(stat -c%s $B) bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          echo "maiores simbolos (wsudp):"; ${{ matrix.arch }}-linux-gnu-nm --size-sort -r -S build/wsudp-${{ matrix.arch }}$S.elf | head -25
+      - name: no qemu (criptografia, TLS real, ntun e wsudp ponta a ponta)
         run: |
+          S=${{ matrix.mips16 && '-16' || '' }}
+          Q="${{ matrix.qemu }} -cpu 24Kc"
+          $Q build/tls_live-${{ matrix.arch }}$S
           make build/ntun-server
-          B=build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
-          test/e2e.sh $B "${{ matrix.qemu }} -cpu 24Kc"
+          test/e2e.sh build/ntun-${{ matrix.arch }}$S "$Q"
+          test/wsudp_live.sh build/wsudp-${{ matrix.arch }}$S "$Q"
       - uses: actions/upload-artifact@v4
         with:
-          name: ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+          name: clientes-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
           path: |
             build/ntun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+            build/rtun-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
+            build/wsudp-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}
             build/bench-${{ matrix.arch }}${{ matrix.mips16 && '-16' || '' }}

@@ -1,10 +1,12 @@
-/* Confere x25519.c e aead.c contra a Monocypher (vendor/, so nos testes)
- * e contra os vetores dos RFCs 7748 e 8439. */
+/* Confere c25519.c, aead.c e sha2.c contra a Monocypher (vendor/, so nos
+ * testes) e contra os vetores dos RFCs 7748, 8439, 8032 e 8448. */
 #include <stdio.h>
 #include <string.h>
 #include "../src/aead.h"
-#include "../src/x25519.h"
+#include "../src/c25519.h"
 #include "../vendor/monocypher.h"
+#include "../vendor/monocypher-ed25519.h"
+#include "../src/sha2.h"
 
 static int fails;
 #define CHECK(c, msg) do { if (!(c)) { printf("FALHOU: %s\n", msg); fails++; } } while (0)
@@ -86,6 +88,64 @@ int main(void)
 		CHECK(aead_open(back, key, nonce, ad, adl, c1, n + 16) == -1, "aead recusa adulterado");
 	}
 
-	printf(fails ? "%d falhas\n" : "x25519 e chacha20-poly1305: ok (rfcs e Monocypher)\n", fails);
+	/* Ed25519, RFC 8032 7.1 teste 1 (mensagem vazia) */
+	{
+		uint8_t pk[32], sig[64];
+		unhex(pk, "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+		unhex(sig, "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+		const uint8_t *parts[1] = { (const uint8_t *)"" };
+		size_t lens[1] = { 0 };
+		CHECK(ed25519_verify(pk, sig, parts, lens, 1) == 0, "ed25519 rfc 8032 teste 1");
+		sig[63] ^= 0x10; /* s >= L ou outra assinatura: recusa */
+		CHECK(ed25519_verify(pk, sig, parts, lens, 1) != 0, "ed25519 recusa assinatura alterada");
+	}
+	/* contra o Ed25519 da Monocypher: ela assina, nos verificamos */
+	for (int n = 0; n < 30; n++) {
+		uint8_t seed[32], sk[64], pk[32], sig[64], msg[200];
+		for (int i = 0; i < 32; i++) seed[i] = (uint8_t)(i * 13 + n * 101 + 1);
+		for (int i = 0; i < 200; i++) msg[i] = (uint8_t)(i * 3 + n);
+		size_t ml = (size_t)n * 6;
+		crypto_ed25519_key_pair(sk, pk, seed);
+		crypto_ed25519_sign(sig, sk, msg, ml);
+		const uint8_t *parts[2] = { msg, msg + ml / 2 };
+		size_t lens[2] = { ml / 2, ml - ml / 2 };
+		CHECK(ed25519_verify(pk, sig, parts, lens, 2) == 0, "ed25519 verifica a da Monocypher");
+		uint8_t bad[64];
+		memcpy(bad, sig, 64);
+		bad[n % 32] ^= 1; /* R */
+		CHECK(ed25519_verify(pk, bad, parts, lens, 2) != 0, "ed25519 recusa R alterado");
+		memcpy(bad, sig, 64);
+		bad[32 + n % 31] ^= 1; /* S */
+		CHECK(ed25519_verify(pk, bad, parts, lens, 2) != 0, "ed25519 recusa S alterado");
+		pk[n % 32] ^= 1;
+		CHECK(ed25519_verify(pk, sig, parts, lens, 2) != 0, "ed25519 recusa chave alterada");
+		pk[n % 32] ^= 1;
+		if (ml) {
+			msg[0] ^= 1;
+			CHECK(ed25519_verify(pk, sig, parts, lens, 2) != 0, "ed25519 recusa mensagem alterada");
+		}
+	}
+
+	/* HKDF do TLS 1.3: RFC 8448, secao 3 (do segredo compartilhado ao
+	 * "s hs traffic" e o iv do servidor) */
+	{
+		uint8_t shared[32], hello[32], want[32], zeros[32] = {0}, empty[32], early[32], der[32], hs[32], s[32], iv[12], wiv[12];
+		unhex(shared, "8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d");
+		unhex(hello, "860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8");
+		unhex(want, "b67b7d690cc16c4e75e54213cb2d37b4e9c912bcded9105d42befd59d391ad38");
+		unhex(wiv, "5d313eb2671276ee13000b30");
+		sha256_ctx x;
+		sha256_init(&x);
+		sha256_final(&x, empty);
+		hmac_sha256(early, zeros, 32, zeros, 32, 0, 0);
+		hkdf_label(der, early, "derived", empty, 32, 32);
+		hmac_sha256(hs, der, 32, shared, 32, 0, 0);
+		hkdf_label(s, hs, "s hs traffic", hello, 32, 32);
+		CHECK(memcmp(s, want, 32) == 0, "tls13 rfc 8448 s hs traffic");
+		hkdf_label(iv, s, "iv", 0, 0, 12);
+		CHECK(memcmp(iv, wiv, 12) == 0, "tls13 rfc 8448 iv");
+	}
+
+	printf(fails ? "%d falhas\n" : "x25519, ed25519, chacha20-poly1305, sha2 e hkdf: ok (rfcs e Monocypher)\n", fails);
 	return fails != 0;
 }

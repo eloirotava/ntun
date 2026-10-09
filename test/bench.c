@@ -2,7 +2,7 @@
  * Cifra blocos de 8 KB (o DATA_MAX do ntun) por 5 s e imprime KB/s. */
 #include "../src/sys.h"
 #include "../src/aead.h"
-#include "../src/x25519.h"
+#include "../src/c25519.h"
 
 static void put(const char *s, long v, const char *u)
 {

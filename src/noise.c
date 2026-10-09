@@ -3,7 +3,7 @@
 #include "noise.h"
 #include "aead.h"
 #include "blake2s.h"
-#include "x25519.h"
+#include "c25519.h"
 
 #define HASHLEN  32
 #define BLOCKLEN 64

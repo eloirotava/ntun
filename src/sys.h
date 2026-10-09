@@ -22,6 +22,8 @@ long x_read(int fd, void *b, size_t n);
 long x_write(int fd, const void *b, size_t n);
 long x_sendto(int fd, const void *b, size_t n, const struct sockaddr_in *a);
 long x_recv(int fd, void *b, size_t n, int flags);
+long x_recvfrom(int fd, void *b, size_t n, int flags, struct sockaddr_in *from);
+long x_bind(int fd, const struct sockaddr_in *a);
 long x_close(int fd);
 long x_open(const char *path);   /* so leitura */
 long x_getrandom(void *b, size_t n);

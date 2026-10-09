@@ -1,5 +1,5 @@
 /* Noise_IK_25519_ChaChaPoly_BLAKE2s (noiseprotocol.org, rev 34), com
- * criptografia compacta propria (x25519.c, aead.c, blake2s.c; conferida
+ * criptografia compacta propria (c25519.c, aead.c, blake2s.c; conferida
  * contra a Monocypher e os vetores oficiais nos testes). So o
  * necessario para o ntun: o iniciador (roteador) conhece a chave estatica do
  * respondedor (VPS) e se identifica com a sua.

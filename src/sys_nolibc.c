@@ -21,6 +21,12 @@ long x_sendto(int fd, const void *b, size_t n, const struct sockaddr_in *a)
 	return S6(sendto, fd, b, n, 0, a, sizeof *a);
 }
 long x_recv(int fd, void *b, size_t n, int fl) { return S6(recvfrom, fd, b, n, fl, 0, 0); }
+long x_recvfrom(int fd, void *b, size_t n, int fl, struct sockaddr_in *f)
+{
+	socklen_t l = sizeof *f;
+	return S6(recvfrom, fd, b, n, fl, f, &l);
+}
+long x_bind(int fd, const struct sockaddr_in *a) { return S3(bind, fd, a, sizeof *a); }
 long x_close(int fd) { return S3(close, fd, 0, 0); }
 long x_open(const char *p) { return S3(open, p, O_RDONLY | O_CLOEXEC, 0); }
 long x_getrandom(void *b, size_t n) { return S3(getrandom, b, n, 0); }
